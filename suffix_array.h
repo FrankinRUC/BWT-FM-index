@@ -3,10 +3,6 @@
 #include <stack>
 #include <algorithm>
 
-#include <iostream>
-
-using namespace std;
-
 template <
 	typename Container
 > struct suffix_array : public Container {
