@@ -1,3 +1,5 @@
+#pragma once
+
 #include <utility>
 #include <vector>
 #include <stack>
@@ -10,16 +12,13 @@ template <
 	std::vector<size_t> SA;
 	std::vector<size_t> cnt;
 	inline void SA_init() {
-		for (auto &index : SA) {
-			index = 0;
-		}
+		SA.assign(size(), 0);
 	}
 	inline void lbucket_init(std::vector<size_t> &bucket) {
-		bucket[0] = 0;
-		std::copy(cnt.begin(), cnt.end() - 1, bucket.begin() + 1);
+		bucket.assign(cnt.begin(), cnt.end() - 1);
 	}
 	inline void sbucket_init(std::vector<size_t> &bucket) {
-		std::copy(cnt.begin(), cnt.end(), bucket.begin());
+		bucket.assign(cnt.begin() + 1, cnt.end());
 	}
 	inline void lbucket_add(size_t index, std::vector<size_t> &bucket) {
 		SA[bucket[(*this)[index]]++] = index;
@@ -27,7 +26,7 @@ template <
 	inline void sbucket_add(size_t index, std::vector<size_t> &bucket) {
 		SA[--bucket[(*this)[index]]] = index;
 	}
-	inline void induced_sort(const std::vector<bool> &type) {
+	void induced_sort(const std::vector<bool> &type) {
 		std::vector<size_t> bucket(sigma);
 		lbucket_init(bucket);
 		for (auto iter = SA.begin(); iter != SA.end(); ++iter) {
@@ -42,7 +41,7 @@ template <
 			}
 		}
 	}
-	inline bool induced_sort_judge(std::vector<bool> &type) {
+	bool induced_sort_judge(std::vector<bool> &type) {
 		std::stack<size_t> LMS;
 		auto iter = end();
 		auto back = sigma;
@@ -61,7 +60,8 @@ template <
 			if (c > 1) {
 				flag = true;
 			}
-			c = (sum += c);
+			std::swap(sum, c);
+			sum += c;
 		}
 		vector<size_t> bucket(sigma);
 		sbucket_init(bucket);
@@ -79,7 +79,7 @@ template <
 	inline bool is_LMS(size_t index, const std::vector<bool> &type) {
 		return index && type[index] && !type[index - 1];
 	}
-	inline bool cmp_LMS(size_t a, size_t b, const std::vector<bool> &type) {
+	bool cmp_LMS(size_t a, size_t b, const std::vector<bool> &type) {
 		if ((*this)[a] != (*this)[b]) {
 			return true;
 		}
@@ -105,7 +105,7 @@ template <
 					}
 				}
 			}
-			sort(LMS.begin(), LMS.end(), [](auto &a, auto &b) {return a.first < b.first;});
+			sort(LMS.begin(), LMS.end(), [](auto &a, auto &b) {return a.first < b.first; });
 			vector<size_t> tmp;
 			for (auto &p : LMS) {
 				tmp.push_back(p.second);
@@ -120,12 +120,12 @@ template <
 			induced_sort(type);
 		}
 	}
-	suffix_array(size_t sigma, const Container &other) : Container(other), sigma(sigma), SA(size(), 0), cnt(sigma, 0) {
+	inline suffix_array(size_t sigma, const Container &other) : Container(other), sigma(sigma), SA(size(), 0), cnt(sigma + 1, 0) {
 		SA_IS();
 	}
 	template<
 		typename InputIt
-	> suffix_array(size_t sigma, InputIt first, InputIt last) : Container(first, last), sigma(sigma), SA(size(), 0), cnt(sigma, 0) {
+	> inline suffix_array(size_t sigma, InputIt first, InputIt last) : Container(first, last), sigma(sigma), SA(size(), 0), cnt(sigma + 1, 0) {
 		SA_IS();
 	}
 };
