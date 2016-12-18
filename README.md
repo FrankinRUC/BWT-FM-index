@@ -1,1 +1,1 @@
-# BWT-FM-index
+# FM-index
