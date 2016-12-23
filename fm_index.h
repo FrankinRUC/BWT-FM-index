@@ -49,7 +49,7 @@ private:
 			return ret;
 		}
 		inline Index count(Index offset) const {
-			return count(offset, string[offset]);
+			return check(offset, string[offset]);
 		}
 	};
 	config conf;

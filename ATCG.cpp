@@ -2,7 +2,6 @@
 #include <unistd.h>
 
 #include <ctime>
-#include <cstdio>
 #include <string>
 #include <iostream>
 #include <fstream>
@@ -55,7 +54,6 @@ int main(int argc, char *argv[]) {
 		ifmap cln(filename + ".cln");
 		fm_index<unsigned char, unsigned int, 5>::create(cln.begin(), cln.end(), filename + ".idx");
 		cerr << "\tusing " << time(NULL) - stamp << " seconds" << endl;
-		remove((filename + ".cln").c_str());
 	}
 	cerr << "querying ..." << endl;
 	fm_index<char, unsigned int, 5> idx(filename + ".idx");
