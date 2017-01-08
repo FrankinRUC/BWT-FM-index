@@ -11,121 +11,140 @@
 template<
 	typename Char,
 	typename Index,
-	Index sigma = 128,
-	Index length = (sigma - 1) * sizeof(Index) / sizeof(Char) * 4,
-	Index distance = sizeof(Index) / sizeof(Char) * 4
+	Index Sigma = 128,
+	Index QueryLen = 0x100,
+	Index SliceLen = 0x8000000,
+	Index BlockLen = (Sigma - 1) * sizeof(Index) / sizeof(Char) * 4,
+	Index IndexDist = sizeof(Index) / sizeof(Char) * 4
 > class fm_index {
 private:
-	class config {
-	public:
-	//private:
-		Index count[sigma + 1];
-		friend inline std::istream &operator >> (std::istream &in, config &conf) {
-			return in.read((char *)&conf, sizeof(config));
-		}
-		friend inline std::ostream &operator<<(std::ostream &out, const config &conf) {
-			return out.write((char *)&conf, sizeof(config));
-		}
-	public:
-		inline config(const std::vector<Index> &v) { std::copy(v.begin(), v.begin() + sigma + 1, count); }
-		inline config(const std::string &filename) { std::ifstream(filename, std::ios::binary) >> *this; }
-		inline Index operator[](Index ch) { return count[ch]; }
-	};
 	struct block {
-		Index check_point[sigma - 1];
-		Char string[length];
-		Index index[length / distance];
+		Char string[BlockLen];
+		Index index[(BlockLen + IndexDist - 1) / IndexDist];
+		Index check_point[Sigma - 1];
 		inline block() { memset(this, 0, sizeof(block)); }
 		friend inline std::ostream &operator<<(std::ostream &out, const block &bl) {
 			return out.write((char *)&bl, sizeof(block));
 		}
-		inline Index count(Index offset, Char ch) const {
-			auto ret = check_point[ch - 1];
-			for (Index i = 0; i < offset; ++i) {
-				if (string[i] == ch) {
-					++ret;
-				}
-			}
-			return ret;
-		}
-		inline Index count(Index offset) const {
-			return check(offset, string[offset]);
-		}
 	};
-	config conf;
 	basic_ifmap<block> map;
-public:
 	template<typename RandomIt>
-	static void create(RandomIt first, RandomIt last, const std::string &filename) {
-		suffix_array<Index> sa(first, last, sigma);
-		std::ofstream(filename + ".config") << config(sa.get_count());
-		std::ofstream out(filename, std::ios::binary);
-		Index cnt[sigma] = { 0 };
-		Index ptr = 0;
+	static void slice_create(RandomIt first, RandomIt last, std::ostream &out) {
+		suffix_array<Index> sa(first, last, Sigma);
 		block tmp;
-		std::copy(cnt + 1, cnt + sigma, tmp.check_point);
+		std::copy(sa.get_count().begin() + 1, sa.get_count().begin() + Sigma, tmp.check_point);
+		Index ptr = 0;
 		for(auto i : sa) {
-			if(ptr == length) {
+			if(i) {
+				++tmp.check_point[(tmp.string[ptr] = *(first + (i - 1))) - 1];
+			} else {
+				tmp.string[ptr] = 0;
+			}
+			if(!(ptr % IndexDist)) {
+				tmp.index[ptr / IndexDist] = i;
+			}
+			if(++ptr == BlockLen) {
 				out << tmp;
-				std::copy(cnt + 1, cnt + sigma, tmp.check_point);
 				ptr = 0;
 			}
-			++cnt[tmp.string[ptr] = (i ? *(first + (i - 1)) : 0)];
-			if(!(ptr % distance)) {
-				tmp.index[ptr / distance] = i;
-			}
-			++ptr;
 		}
 		if(ptr) {
-			for(; ptr != length; ++ptr) {
+			for(; ptr != BlockLen; ++ptr) {
 				tmp.string[ptr] = 0;
-				if(!(ptr % distance)) {
-					tmp.index[ptr / distance] = 0;
+				if(!(ptr % IndexDist)) {
+					tmp.index[ptr / IndexDist] = 0;
 				}
 			}
 			out << tmp;
 		}
+		return;
 	}
-	inline fm_index(const std::string &filename) : conf(filename + ".config"), map(filename) {
+	inline Char slice_get(const block *slice, Index pos) {
+		return slice[pos / BlockLen].string[pos % BlockLen];
 	}
-	inline Char operator[](const Index &offset) {
-		return map[offset / length].string[offset % length];
-	}
-	inline Index count(Index offset, Char ch) {
-		return conf[ch] + map[offset / length].count(offset % length, ch);
-	}
-	inline Index count(Index offset) {
-		return count(offset, (*this)[offset]);
-	}
-	inline Index index(Index offset) {
-		Index ret = 0;
-		for (; (offset % length) % distance && (*this)[offset]; ++ret) {
-			offset = count(offset);
+	inline Index slice_count(const block *slice, Index pos, Char ch) {
+		Index segment = pos / BlockLen, offset = pos % BlockLen, ret = 0;
+		if(segment && offset < BlockLen / 2) {
+			ret = slice[segment - 1].check_point[ch - 1];
+			for(auto ptr = slice[segment].string; ptr < slice[segment].string + offset; ret += (*ptr++ == ch)) {
+			}
+		} else {
+			ret = slice[segment].check_point[ch - 1];
+			for(auto ptr = slice[segment].string + BlockLen; ptr > slice[segment].string + offset; ret -= (*--ptr == ch)) {
+			}
 		}
-		if ((*this)[offset]) {
-			ret += map[offset / length].index[(offset % length) / distance];
+		return ret;
+	}
+	inline Index slice_count(const block *slice, Index pos) {
+		return slice_count(slice, pos, slice_get(slice, pos));
+	}
+	inline Index slice_index(const block *slice, Index pos) {
+		Index ret = 0;
+		for (; (pos % BlockLen) % IndexDist && slice_get(slice, pos); ++ret) {
+			pos = slice_count(slice, pos);
+		}
+		if (slice_get(slice, pos)) {
+			ret += slice[pos / BlockLen].index[(pos % BlockLen) / IndexDist];
 		}
 		return ret;
 	}
 	template <typename BidirIt>
-	std::vector<Index> query(BidirIt first, BidirIt last) { // reverse search
-		Index up = 0, down = conf[sigma];
+	std::vector<Index> slice_query(const block *slice_first, const block *slice_last, BidirIt first, BidirIt last) {
+		Index up = 0, down = (slice_last - 1)->check_point[Sigma - 2];
 		while(last != first) {
 			if (up == down) {
 				break;
 			}
 			--last;
-			up = count(up, *last);
-			down = count(down, *last);
+			up = slice_count(slice_first, up, *last);
+			down = slice_count(slice_first, down, *last);
 		}
 		std::vector<Index> ret;
 		for (; up != down; ++up) {
-			ret.push_back(index(up));
+			ret.push_back(slice_index(slice_first, up));
 		}
 		std::sort(ret.begin(), ret.end());
 		return ret;
 	}
-	inline std::vector<Index> query(const std::string &str) {
-		return query(str.begin(), str.end());
+public:
+	template<typename RandomIt>
+	static void create(RandomIt first, RandomIt last, const std::string &filename) {
+		std::ofstream out(filename, std::ios::binary);
+		for(; last - first > SliceLen + QueryLen; first += SliceLen) {
+			auto iter = first + (SliceLen + QueryLen - 1);
+			auto tmp = *iter;
+			*iter = 0;
+			slice_create(first, iter + 1, out);
+			*iter = tmp;
+		}
+		if(last - first > QueryLen) {
+			slice_create(first, last, out);
+		}
+		out.close();
+		return;
+	}
+	inline fm_index(const std::string &filename) : map(filename) {
+	}
+	template<typename BidirIt>
+	std::vector<Index> query(BidirIt first, BidirIt last) {
+		const Index slice_size = (SliceLen + QueryLen + BlockLen - 1) / BlockLen;
+		std::vector<Index> ret;
+		auto ptr = map.begin();
+		for(; map.end() - ptr > slice_size; ptr += slice_size) {
+			for(auto i : slice_query(ptr, ptr + slice_size, first, last)) {
+				auto index = i + (ptr- map.begin()) / slice_size
+				 * SliceLen;
+				if(ret.empty() || ret.back() < index) {
+					ret.push_back(index);
+				}
+			}
+		}
+		for(auto i : slice_query(ptr, map.end(), first, last)) {
+			auto index = i + (ptr- map.begin()) * SliceLen;
+			if(ret.empty() || ret.back() < index) {
+				ret.push_back(index);
+			}
+		}
+		return ret;
 	}
 };

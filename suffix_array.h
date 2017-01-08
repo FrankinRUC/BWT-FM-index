@@ -1,6 +1,5 @@
 #pragma once
 
-//#include <utility>
 #include <vector>
 
 template<typename Type>
@@ -63,8 +62,6 @@ public:
 	> inline suffix_array(RandomIt first, RandomIt last, Type sigma) : std::vector<Type>(last - first, 0), rank(last - first, 0), sigma(sigma), count(sigma + 1, 0) {
 		SA_IS(first);
 	}
-	~suffix_array() {
-	}
 	inline const super &get_count() const {
 		return count;
 	}
@@ -78,7 +75,7 @@ inline bool suffix_array<Type>::cmp_LMS(RandomIt first, Type a, Type b, const st
 	}
 	for (++a, ++b; *(first + a) == *(first + b) && !is_LMS(a, type) && !is_LMS(b, type); ++a, ++b) {
 	}
-	return *(first + a) != *(first + b);
+	return !is_LMS(a, type) || !is_LMS(b, type);
 }
 
 template<typename Type>
